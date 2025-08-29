@@ -83,7 +83,12 @@ function FlowCanvas({ nodes, setNodes, edges, setEdges }) {
 
   // Event handler for the 'connecting nodes' function to create a new edge and update the edge Array.
   const onConnect = useCallback(
-    (params) => setEdges((edgesSnapshot) => addEdge(params, edgesSnapshot)),
+    (params) => setEdges((edgesSnapshot) => {
+      // only one connection per target handle
+      const existsAtHandle = edgesSnapshot.some((e) => e.target === params.target && e.targetHandle === params.targetHandle);
+      if (existsAtHandle) return edgesSnapshot;
+      return addEdge({ ...params, type: 'signalEdge' }, edgesSnapshot);
+    }),
     [setEdges],
   );
 //event handler for the start of the connection
@@ -208,25 +213,60 @@ export default function App() {
     evaluateGraph();
   }, [nodes, edges]);
 
+  // persistence
+  useEffect(() => {
+    try {
+      localStorage.setItem('rf:nodes', JSON.stringify(nodes));
+      localStorage.setItem('rf:edges', JSON.stringify(edges));
+    } catch {}
+  }, [nodes, edges]);
+
+  useEffect(() => {
+    try {
+      const n = JSON.parse(localStorage.getItem('rf:nodes'));
+      const e = JSON.parse(localStorage.getItem('rf:edges'));
+      if (Array.isArray(n) && Array.isArray(e)) {
+        setNodes(n);
+        setEdges(e);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div style={{ width: '100vw', height: '100vh' }}>
       <ReactFlowProvider>
         <FlowCanvas nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges} />
         <div style={{ position: 'fixed', top: 12, left: 12, display: 'flex', gap: 8, zIndex: 10 }}>
-          <Toolbar setNodes={setNodes} />
+          <Toolbar setNodes={setNodes} setEdges={setEdges} />
         </div>
       </ReactFlowProvider>
     </div>
   );
 }
 
-function Toolbar({ setNodes }) {
+function Toolbar({ setNodes, setEdges }) {
   const { screenToFlowPosition } = useReactFlow();
   const add = (type) => {
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const id = `${type}-${Date.now()}`;
     setNodes((prev) => prev.concat({ id, type, position: center, data: type === 'inputNode' ? { value: false } : {} }));
   };
+  const save = () => {
+    try {
+      localStorage.setItem('rf:nodes', JSON.stringify(nodes));
+      localStorage.setItem('rf:edges', JSON.stringify(edges));
+    } catch {}
+  };
+  const load = () => {
+    try {
+      const n = JSON.parse(localStorage.getItem('rf:nodes'));
+      const e = JSON.parse(localStorage.getItem('rf:edges'));
+      if (Array.isArray(n)) setNodes(n);
+      if (Array.isArray(e)) setEdges(e);
+    } catch {}
+  };
+  const reset = () => { setNodes(initialNodes); setEdges(initialEdges); };
   const btn = (label, type) => (
     <button onClick={() => add(type)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>{label}</button>
   );
@@ -237,6 +277,9 @@ function Toolbar({ setNodes }) {
       {btn('OR', 'orNode')}
       {btn('NOT', 'notNode')}
       {btn('Bulb', 'bulbNode')}
+      <button onClick={save} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>Save</button>
+      <button onClick={load} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>Load</button>
+      <button onClick={reset} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #7f1d1d', background: '#1b0b0b', color: 'white' }}>Reset</button>
     </div>
   );
 }
