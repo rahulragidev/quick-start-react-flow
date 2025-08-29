@@ -162,7 +162,7 @@ export default function App() {
   // toggle handler injected into input nodes
   const toggleInput = useCallback((id) => {
     setNodes((prev) => prev.map((n) => n.id === id && n.type === 'inputNode'
-      ? { ...n, data: { ...n.data, value: !Boolean(n.data?.value) } }
+      ? { ...n, data: { ...n.data, value: !n.data?.value } }
       : n
     ));
   }, [setNodes]);
@@ -190,7 +190,7 @@ export default function App() {
 
         if (n.type === 'andNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) && Boolean(getVal('b')) });
         if (n.type === 'orNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) || Boolean(getVal('b')) });
-        if (n.type === 'notNode') nodeIdToValue.set(n.id, { out: !Boolean(getVal('a')) });
+        if (n.type === 'notNode') nodeIdToValue.set(n.id, { out: !getVal('a') });
         if (n.type === 'outputNode' || n.type === 'bulbNode') nodeIdToValue.set(n.id, { in: Boolean(getVal('in')) });
       });
     }
