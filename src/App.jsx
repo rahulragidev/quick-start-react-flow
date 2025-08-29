@@ -2,13 +2,14 @@ import { addEdge, BackgroundVariant, Handle, Position } from '@xyflow/react';
 import { ReactFlow, Controls,Background, applyNodeChanges, applyEdgeChanges, MiniMap, useReactFlow, ReactFlowProvider } from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { TextUpdaterNode } from './components/TextUpdaterNode';
 import InputNode from './components/nodes/InputNode';
 import OutputNode from './components/nodes/OutputNode';
 import AndNode from './components/nodes/AndNode';
 import OrNode from './components/nodes/OrNode';
 import NotNode from './components/nodes/NotNode';
+import BulbNode from './components/nodes/BulbNode';
 import SignalEdge from './components/edges/SignalEdge';
 
 //initial nodes and edges
@@ -40,7 +41,7 @@ const initialNodes = [
   {
     id: 'out1',
     position: { x: 300, y: -25 },
-    type: 'outputNode',
+    type: 'bulbNode',
     data: {},
   },
 ];
@@ -59,6 +60,7 @@ const nodeTypes = {
   andNode: AndNode,
   orNode: OrNode,
   notNode: NotNode,
+  bulbNode: BulbNode,
 };
 const edgeTypes = { signalEdge: SignalEdge };
 
@@ -157,54 +159,49 @@ export default function App() {
   const [nodes, setNodes] = useState(initialNodes);
   const [edges, setEdges] = useState(initialEdges);
 
-  // propagate logic values through edges
+  // toggle handler injected into input nodes
+  const toggleInput = useCallback((id) => {
+    setNodes((prev) => prev.map((n) => n.id === id && n.type === 'inputNode'
+      ? { ...n, data: { ...n.data, value: !Boolean(n.data?.value) } }
+      : n
+    ));
+  }, [setNodes]);
+
+  // compute deterministic values and set edge activity
   const evaluateGraph = useCallback(() => {
     const nodeIdToValue = new Map();
     nodes.forEach((n) => {
       if (n.type === 'inputNode') nodeIdToValue.set(n.id, { out: Boolean(n.data?.value) });
     });
 
-    // simple multi-pass to settle values
-    for (let i = 0; i < 3; i++) {
+    // incoming edges index
+    const incoming = new Map();
+    nodes.forEach((n) => incoming.set(n.id, []));
+    edges.forEach((e) => { (incoming.get(e.target) || []).push(e); });
+
+    // settle values over a few passes
+    for (let i = 0; i < 5; i++) {
       nodes.forEach((n) => {
-        if (n.type === 'andNode') {
-          const a = edges.find((e) => e.target === n.id && e.targetHandle === 'a');
-          const b = edges.find((e) => e.target === n.id && e.targetHandle === 'b');
-          const av = a ? nodeIdToValue.get(a.source)?.out : undefined;
-          const bv = b ? nodeIdToValue.get(b.source)?.out : undefined;
-          const out = Boolean(av) && Boolean(bv);
-          nodeIdToValue.set(n.id, { out });
-        }
-        if (n.type === 'orNode') {
-          const a = edges.find((e) => e.target === n.id && e.targetHandle === 'a');
-          const b = edges.find((e) => e.target === n.id && e.targetHandle === 'b');
-          const av = a ? nodeIdToValue.get(a.source)?.out : undefined;
-          const bv = b ? nodeIdToValue.get(b.source)?.out : undefined;
-          const out = Boolean(av) || Boolean(bv);
-          nodeIdToValue.set(n.id, { out });
-        }
-        if (n.type === 'notNode') {
-          const a = edges.find((e) => e.target === n.id && e.targetHandle === 'a');
-          const av = a ? nodeIdToValue.get(a.source)?.out : undefined;
-          const out = !Boolean(av);
-          nodeIdToValue.set(n.id, { out });
-        }
-        if (n.type === 'outputNode') {
-          const a = edges.find((e) => e.target === n.id && e.targetHandle === 'in');
-          const av = a ? nodeIdToValue.get(a.source)?.out : undefined;
-          nodeIdToValue.set(n.id, { in: Boolean(av) });
-        }
+        const inc = incoming.get(n.id) || [];
+        const getVal = (handleId) => {
+          const edge = inc.find((e) => e.targetHandle === handleId);
+          return edge ? nodeIdToValue.get(edge.source)?.out : undefined;
+        };
+
+        if (n.type === 'andNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) && Boolean(getVal('b')) });
+        if (n.type === 'orNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) || Boolean(getVal('b')) });
+        if (n.type === 'notNode') nodeIdToValue.set(n.id, { out: !Boolean(getVal('a')) });
+        if (n.type === 'outputNode' || n.type === 'bulbNode') nodeIdToValue.set(n.id, { in: Boolean(getVal('in')) });
       });
     }
 
-    // update node data and edge activity
     setNodes((prev) => prev.map((n) => {
-      if (n.type === 'inputNode') return n;
-      if (n.type === 'outputNode') return { ...n, data: { ...n.data, value: nodeIdToValue.get(n.id)?.in } };
-      return { ...n, data: { ...n.data, a: undefined, b: undefined, value: nodeIdToValue.get(n.id)?.out } };
+      if (n.type === 'inputNode') return { ...n, data: { ...n.data, onToggle: toggleInput } };
+      if (n.type === 'outputNode' || n.type === 'bulbNode') return { ...n, data: { ...n.data, value: nodeIdToValue.get(n.id)?.in } };
+      return { ...n, data: { ...n.data, value: nodeIdToValue.get(n.id)?.out } };
     }));
     setEdges((prev) => prev.map((e) => ({ ...e, type: 'signalEdge', data: { active: Boolean(nodeIdToValue.get(e.source)?.out) } })));
-  }, [nodes, edges, setNodes, setEdges]);
+  }, [nodes, edges, toggleInput]);
 
   // re-evaluate when graph changes
   useEffect(() => {
@@ -215,7 +212,31 @@ export default function App() {
     <div style={{ width: '100vw', height: '100vh' }}>
       <ReactFlowProvider>
         <FlowCanvas nodes={nodes} setNodes={setNodes} edges={edges} setEdges={setEdges} />
+        <div style={{ position: 'fixed', top: 12, left: 12, display: 'flex', gap: 8, zIndex: 10 }}>
+          <Toolbar setNodes={setNodes} />
+        </div>
       </ReactFlowProvider>
+    </div>
+  );
+}
+
+function Toolbar({ setNodes }) {
+  const { screenToFlowPosition } = useReactFlow();
+  const add = (type) => {
+    const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const id = `${type}-${Date.now()}`;
+    setNodes((prev) => prev.concat({ id, type, position: center, data: type === 'inputNode' ? { value: false } : {} }));
+  };
+  const btn = (label, type) => (
+    <button onClick={() => add(type)} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>{label}</button>
+  );
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      {btn('Input', 'inputNode')}
+      {btn('AND', 'andNode')}
+      {btn('OR', 'orNode')}
+      {btn('NOT', 'notNode')}
+      {btn('Bulb', 'bulbNode')}
     </div>
   );
 }
