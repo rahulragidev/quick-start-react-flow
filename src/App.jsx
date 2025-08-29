@@ -10,6 +10,13 @@ import AndNode from './components/nodes/AndNode';
 import OrNode from './components/nodes/OrNode';
 import NotNode from './components/nodes/NotNode';
 import BulbNode from './components/nodes/BulbNode';
+import BufferNode from './components/nodes/BufferNode';
+import NandNode from './components/nodes/NandNode';
+import NorNode from './components/nodes/NorNode';
+import XorNode from './components/nodes/XorNode';
+import XnorNode from './components/nodes/XnorNode';
+import ClockNode from './components/nodes/ClockNode';
+import DFlipFlopNode from './components/nodes/DFlipFlopNode';
 import SignalEdge from './components/edges/SignalEdge';
 
 //initial nodes and edges
@@ -61,6 +68,13 @@ const nodeTypes = {
   orNode: OrNode,
   notNode: NotNode,
   bulbNode: BulbNode,
+  bufferNode: BufferNode,
+  nandNode: NandNode,
+  norNode: NorNode,
+  xorNode: XorNode,
+  xnorNode: XnorNode,
+  clockNode: ClockNode,
+  dffNode: DFlipFlopNode,
 };
 const edgeTypes = { signalEdge: SignalEdge };
 
@@ -176,7 +190,7 @@ export default function App() {
   const evaluateGraph = useCallback(() => {
     const nodeIdToValue = new Map();
     nodes.forEach((n) => {
-      if (n.type === 'inputNode') nodeIdToValue.set(n.id, { out: Boolean(n.data?.value) });
+      if (n.type === 'inputNode' || n.type === 'clockNode') nodeIdToValue.set(n.id, { out: Boolean(n.data?.value) });
     });
 
     // incoming edges index
@@ -196,13 +210,27 @@ export default function App() {
         if (n.type === 'andNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) && Boolean(getVal('b')) });
         if (n.type === 'orNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) || Boolean(getVal('b')) });
         if (n.type === 'notNode') nodeIdToValue.set(n.id, { out: !getVal('a') });
+        if (n.type === 'bufferNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) });
+        if (n.type === 'nandNode') nodeIdToValue.set(n.id, { out: !(Boolean(getVal('a')) && Boolean(getVal('b'))) });
+        if (n.type === 'norNode') nodeIdToValue.set(n.id, { out: !(Boolean(getVal('a')) || Boolean(getVal('b'))) });
+        if (n.type === 'xorNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) !== Boolean(getVal('b')) });
+        if (n.type === 'xnorNode') nodeIdToValue.set(n.id, { out: Boolean(getVal('a')) === Boolean(getVal('b')) });
+        if (n.type === 'dffNode') {
+          const d = Boolean(getVal('d'));
+          const clk = Boolean(getVal('clk'));
+          const prevQ = Boolean(n.data?.q);
+          const q = clk ? d : prevQ; // rising-true latch (simplified)
+          nodeIdToValue.set(n.id, { q });
+        }
         if (n.type === 'outputNode' || n.type === 'bulbNode') nodeIdToValue.set(n.id, { in: Boolean(getVal('in')) });
       });
     }
 
     setNodes((prev) => prev.map((n) => {
       if (n.type === 'inputNode') return { ...n, data: { ...n.data, onToggle: toggleInput } };
+      if (n.type === 'clockNode') return { ...n, data: { ...n.data, onToggle: (id) => setNodes((p) => p.map((m) => m.id === id ? { ...m, data: { ...m.data, running: !m.data?.running } } : m )), onTick: (id) => setNodes((p) => p.map((m) => m.id === id ? { ...m, data: { ...m.data, value: !m.data?.value } } : m )) } };
       if (n.type === 'outputNode' || n.type === 'bulbNode') return { ...n, data: { ...n.data, value: nodeIdToValue.get(n.id)?.in } };
+      if (n.type === 'dffNode') return { ...n, data: { ...n.data, q: nodeIdToValue.get(n.id)?.q } };
       return { ...n, data: { ...n.data, value: nodeIdToValue.get(n.id)?.out } };
     }));
     setEdges((prev) => prev.map((e) => ({ ...e, type: 'signalEdge', data: { active: Boolean(nodeIdToValue.get(e.source)?.out) } })));
@@ -230,7 +258,7 @@ export default function App() {
         setEdges(e);
       }
     } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   return (
@@ -276,6 +304,13 @@ function Toolbar({ setNodes, setEdges }) {
       {btn('AND', 'andNode')}
       {btn('OR', 'orNode')}
       {btn('NOT', 'notNode')}
+      {btn('BUF', 'bufferNode')}
+      {btn('NAND', 'nandNode')}
+      {btn('NOR', 'norNode')}
+      {btn('XOR', 'xorNode')}
+      {btn('XNOR', 'xnorNode')}
+      {btn('Clock', 'clockNode')}
+      {btn('DFF', 'dffNode')}
       {btn('Bulb', 'bulbNode')}
       <button onClick={save} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>Save</button>
       <button onClick={load} style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0b1220', color: 'white' }}>Load</button>
